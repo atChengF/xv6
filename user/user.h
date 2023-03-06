@@ -2,16 +2,16 @@ struct stat;
 struct rtcdate;
 
 // system calls
-int fork(void);
-int exit(int) __attribute__((noreturn));
-int wait(int*);
-int pipe(int*);
+int fork(void); //父进程返回子进程序号，子进程返回0
+int exit(int) __attribute__((noreturn)); //无需返回
+int wait(int*); 
+int pipe(int*); 
 int write(int, const void*, int);
 int read(int, void*, int);
 int close(int);
 int kill(int);
 int exec(char*, char**);
-int open(const char*, int);
+int open(const char*, int); //open 返回的是打开文件的 fd
 int mknod(const char*, short, short);
 int unlink(const char*);
 int fstat(int fd, struct stat*);

@@ -19,6 +19,7 @@ extern void forkret(void);
 static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
 
+//这个是保存的trampoline的地址
 extern char trampoline[]; // trampoline.S
 
 // initialize the proc table at boot time.
@@ -235,18 +236,22 @@ userinit(void)
 
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
+// 对堆指针进行增大或者减少，同时需要堆页表进行处理
 int
 growproc(int n)
 {
   uint sz;
+  //获取当前正在处理的进程
   struct proc *p = myproc();
 
   sz = p->sz;
   if(n > 0){
+    //获取空间
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
   } else if(n < 0){
+    //减少空间
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;

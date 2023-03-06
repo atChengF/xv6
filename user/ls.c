@@ -53,10 +53,13 @@ ls(char *path)
     }
     strcpy(buf, path);
     p = buf+strlen(buf);
+    //就是p指向了 buf
     *p++ = '/';
     while(read(fd, &de, sizeof(de)) == sizeof(de)){
+      //这里存在一点疑问？空节点跳过吗？这个是什么情况下出现， fd可能会指向一个目录，读取相关信息
       if(de.inum == 0)
         continue;
+        //p 指针 在path + / + de.name 
       memmove(p, de.name, DIRSIZ);
       p[DIRSIZ] = 0;
       if(stat(buf, &st) < 0){

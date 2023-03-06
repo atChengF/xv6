@@ -8,13 +8,13 @@ _entry:
         # stack0 is declared in start.c,
         # with a 4096-byte stack per CPU.
         # sp = stack0 + (hartid * 4096)
-        la sp, stack0
-        li a0, 1024*4
-	csrr a1, mhartid
-        addi a1, a1, 1
-        mul a0, a0, a1
-        add sp, sp, a0
-	# jump to start() in start.c
-        call start
+        la sp, stack0 # 取地址
+        li a0, 1024*4 # 取立即数
+	csrr a1, mhartid # 读取cpuid 存放到 a1中
+        addi a1, a1, 1 # ai + 1
+        mul a0, a0, a1 # a0 = 4k * ai 
+        add sp, sp, a0 # sp += a0
+	# jump to start() in start.c 
+        call start #跳转到start
 spin:
         j spin

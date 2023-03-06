@@ -11,14 +11,20 @@ void
 main()
 {
   if(cpuid() == 0){
+    // 控制台
     consoleinit();
     printfinit();
     printf("\n");
     printf("xv6 kernel is booting\n");
     printf("\n");
+    // 虚拟内存和页表
+    // 初始化物理地址空间，用一个链表进行连接
     kinit();         // physical page allocator
+    // 初始化内核代码和相关设备的页表
     kvminit();       // create kernel page table
+    // 启动页表
     kvminithart();   // turn on paging
+
     procinit();      // process table
     trapinit();      // trap vectors
     trapinithart();  // install kernel trap vector

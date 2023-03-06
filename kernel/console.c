@@ -186,7 +186,7 @@ consoleinit(void)
   initlock(&cons.lock, "cons");
 
   uartinit();
-
+  
   // connect read and write system calls
   // to consoleread and consolewrite.
   devsw[CONSOLE].read = consoleread;

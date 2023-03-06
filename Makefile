@@ -5,9 +5,12 @@
 
 -include conf/lab.mk
 
+# kernel, 内核
 K=kernel
+# user 用户
 U=user
 
+# 对象
 OBJS = \
   $K/entry.o \
   $K/start.o \
@@ -37,6 +40,7 @@ OBJS = \
   $K/plic.o \
   $K/virtio_disk.o \
 
+#目前没什么用
 ifeq ($(LAB),pgtbl)
 OBJS += $K/vmcopyin.o
 endif
@@ -45,6 +49,7 @@ endif
 # perhaps in /opt/riscv/bin
 #TOOLPREFIX = 
 
+# 寻找risc-v64相关的依赖链
 # Try to infer the correct TOOLPREFIX if not set
 ifndef TOOLPREFIX
 TOOLPREFIX := $(shell if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
@@ -59,27 +64,40 @@ TOOLPREFIX := $(shell if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' 
 	echo "***" 1>&2; exit 1; fi)
 endif
 
+#qemu
 QEMU = qemu-system-riscv64
 
+# 编译c文件工具
 CC = $(TOOLPREFIX)gcc
+# 编译
 AS = $(TOOLPREFIX)gas
+#链接器
 LD = $(TOOLPREFIX)ld
+#文件复制
 OBJCOPY = $(TOOLPREFIX)objcopy
+#文件反汇编
 OBJDUMP = $(TOOLPREFIX)objdump
 
+#CFLAGS用于编译器的参数，开启警告 -Wall、编译时检查错误 -Werror、优化等级 -O、保留帧指针 -fno-omit-frame-pointer、调试信息 -ggdb
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb
 
 ifdef LAB
 LABUPPER = $(shell echo $(LAB) | tr a-z A-Z)
 CFLAGS += -DSOL_$(LABUPPER)
 endif
+#-DSOL_$(LABUPPER)表示定义预处理宏SOL_$(LABUPPER)，其中$(LABUPPER)为LAB变量的值（即实验名），这个宏用于在代码中判断当前实验；
 
-CFLAGS += -MD
-CFLAGS += -mcmodel=medany
-CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax
-CFLAGS += -I.
+CFLAGS += -MD #-MD表示生成依赖关系文件，即.d文件；
+CFLAGS += -mcmodel=medany # -mcmodel=medany表示使用medany内存模型，即允许数据和代码同时存在于4GB以上的内存中；
+CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax  
+# -ffreestanding表示代码可以在没有操作系统支持的环境下运行；
+# -fno-common表示禁止使用未初始化全局变量的共享内存；
+# -nostdlib表示不使用标准库函数；
+# -mno-relax表示不使用relax机制；
+CFLAGS += -I. 
+# -I.表示添加当前目录到头文件搜索路径；
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
-
+# 表示检测编译器是否支持-fno-stack-protector选项，如果支持则添加该选项到CFLAGS中。
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
 ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]no-pie'),)
 CFLAGS += -fno-pie -no-pie
@@ -87,7 +105,8 @@ endif
 ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]nopie'),)
 CFLAGS += -fno-pie -nopie
 endif
-
+# 解决工具链中出现的一个问题
+# -z max-page-size=4096表示设置最大页面大小为4096字节。
 LDFLAGS = -z max-page-size=4096
 
 $K/kernel: $(OBJS) $K/kernel.ld $U/initcode
@@ -107,7 +126,7 @@ tags: $(OBJS) _init
 ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
 
 _%: %.o $(ULIB)
-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^ 
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 
@@ -132,6 +151,7 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 # http://www.gnu.org/software/make/manual/html_node/Chained-Rules.html
 .PRECIOUS: %.o
 
+# 用户态程序
 UPROGS=\
 	$U/_cat\
 	$U/_echo\
@@ -149,6 +169,11 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
+	$U/_test\
+	$U/_sleep\
+	$U/_pingpong\
+	$U/_primes\
+	$U/_find\
 
 
 ifeq ($(LAB),syscall)

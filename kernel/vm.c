@@ -18,13 +18,17 @@ extern char trampoline[]; // trampoline.S
 /*
  * create a direct-map page table for the kernel.
  */
+//里面申请了很多内容，包括硬件在内核中的映射和内核中多个功能段的地址的映射
 void
 kvminit()
 {
+  //申请了一页空闲页
   kernel_pagetable = (pagetable_t) kalloc();
+  //整页填0
   memset(kernel_pagetable, 0, PGSIZE);
 
   // uart registers
+  //va pa sz parm
   kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
 
   // virtio mmio disk interface
@@ -52,7 +56,9 @@ kvminit()
 void
 kvminithart()
 {
+  //把内核的pagetable地址写入satp
   w_satp(MAKE_SATP(kernel_pagetable));
+  //刷新TLB
   sfence_vma();
 }
 
@@ -68,6 +74,8 @@ kvminithart()
 //   21..29 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
+// 三级页表遍历得到物理地址，alloc为1，如果不存在就会创建
+//返回最后的页表项
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
@@ -75,16 +83,22 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
     panic("walk");
 
   for(int level = 2; level > 0; level--) {
+    // 根据偏移量找到 pte
     pte_t *pte = &pagetable[PX(level, va)];
+    //非零和 合法性检查
     if(*pte & PTE_V) {
+      //如果检查通过，那么获得下一级的页表
       pagetable = (pagetable_t)PTE2PA(*pte);
     } else {
+      //如果 alloc为0 或者未申请到一页的空间 那么 返回值为零
       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
         return 0;
       memset(pagetable, 0, PGSIZE);
+      //加上 valid位
       *pte = PA2PTE(pagetable) | PTE_V;
     }
   }
+  //返回物理地址
   return &pagetable[PX(0, va)];
 }
 
@@ -145,6 +159,7 @@ kvmpa(uint64 va)
 // physical addresses starting at pa. va and size might not
 // be page-aligned. Returns 0 on success, -1 if walk() couldn't
 // allocate a needed page-table page.
+// 创建页表项
 int
 mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 {
@@ -156,8 +171,10 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
+    //如果pte为空或者 valid为 true
     if(*pte & PTE_V)
       panic("remap");
+    
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
@@ -233,7 +250,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 
   if(newsz < oldsz)
     return oldsz;
-
+  //进行4k对齐  
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += PGSIZE){
     mem = kalloc();

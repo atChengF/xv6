@@ -18,6 +18,7 @@ struct run {
   struct run *next;
 };
 
+//内核内存
 struct {
   struct spinlock lock;
   struct run *freelist;
@@ -53,7 +54,8 @@ kfree(void *pa)
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
-
+  
+  //在每一页的开头指明地址
   r = (struct run*)pa;
 
   acquire(&kmem.lock);

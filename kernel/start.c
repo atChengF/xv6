@@ -4,10 +4,11 @@
 #include "riscv.h"
 #include "defs.h"
 
+//时钟中断初始化和机器模式转变
 void main();
 void timerinit();
 
-// entry.S needs one stack per CPU.
+// entry.S needs one stack per CPU. __attribute__ ((aligned (16))) 按照 16字节对齐的方式， 指定栈的大小
 __attribute__ ((aligned (16))) char stack0[4096 * NCPU];
 
 // scratch area for timer interrupt, one per CPU.
@@ -21,6 +22,7 @@ void
 start()
 {
   // set M Previous Privilege mode to Supervisor, for mret.
+  // 机器级别切换到监视机
   unsigned long x = r_mstatus();
   x &= ~MSTATUS_MPP_MASK;
   x |= MSTATUS_MPP_S;
@@ -28,16 +30,20 @@ start()
 
   // set M Exception Program Counter to main, for mret.
   // requires gcc -mcmodel=medany
+  // 设置mepc地址，用于回到main 
   w_mepc((uint64)main);
 
   // disable paging for now.
+  //展示禁用页表功能
   w_satp(0);
 
   // delegate all interrupts and exceptions to supervisor mode.
   w_medeleg(0xffff);
   w_mideleg(0xffff);
+  //设置启动，外部中断，时钟中断，软件中断
   w_sie(r_sie() | SIE_SEIE | SIE_STIE | SIE_SSIE);
 
+  //时钟中断初始化
   // ask for clock interrupts.
   timerinit();
 
@@ -46,6 +52,12 @@ start()
   w_tp(id);
 
   // switch to supervisor mode and jump to main().
+  //mret指令是riscv架构中的一条特权指令，
+  //其主要作用是从机器模式返回到先前的特权模式。
+  //具体来说，当处理器处于机器模式下执行时，如果需要将控制权返回到先前的特权模式时，
+  //就可以使用mret指令。在执行mret指令时，处理器会将当前的机器模式程序计数器值保存在mepc中，
+  //并将mstatus寄存器的MPP位设置为先前的特权模式，同时会将程序计数器(PC)设置为mepc中保存的值。通过这种方式，
+  //就可以实现从机器模式到先前的特权模式的转移。
   asm volatile("mret");
 }
 

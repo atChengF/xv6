@@ -1,6 +1,6 @@
 // which hart (core) is this?
 static inline uint64
-r_mhartid()
+r_mhartid() //machine hardware thread ID 表cpu的序号
 {
   uint64 x;
   asm volatile("csrr %0, mhartid" : "=r" (x) );
@@ -32,6 +32,7 @@ w_mstatus(uint64 x)
 // machine exception program counter, holds the
 // instruction address to which a return from
 // exception will go.
+// 中断或者异常的下一条指令地址，用户entry -> start -> main
 static inline void 
 w_mepc(uint64 x)
 {
@@ -137,6 +138,7 @@ r_medeleg()
   return x;
 }
 
+//Machine Exception Delegation Register，机器异常委托寄存器，该寄存器用于委托机器模式下的异常给超级用户模式处理。
 static inline void 
 w_medeleg(uint64 x)
 {
@@ -144,6 +146,7 @@ w_medeleg(uint64 x)
 }
 
 // Machine Interrupt Delegation
+//全称为Machine Interrupt Delegation Register，机器中断委托寄存器，该寄存器用于委托所有的中断给超级用户模式处理。
 static inline uint64
 r_mideleg()
 {
@@ -151,7 +154,8 @@ r_mideleg()
   asm volatile("csrr %0, mideleg" : "=r" (x) );
   return x;
 }
-
+//全称为Supervisor Interrupt Enable Register，
+//超级用户中断使能寄存器，该寄存器用于控制超级用户模式下的中断使能，包括启动中断、外部中断、时钟中断和软件中断等
 static inline void 
 w_mideleg(uint64 x)
 {
@@ -183,11 +187,12 @@ w_mtvec(uint64 x)
 
 // use riscv's sv39 page table scheme.
 #define SATP_SV39 (8L << 60)
-
+//右移12bit， 相当于膜上4k，偏移部分，pagetable，后12位一般都为零，
 #define MAKE_SATP(pagetable) (SATP_SV39 | (((uint64)pagetable) >> 12))
 
 // supervisor address translation and protection;
 // holds the address of the page table.
+// 页表寄存器
 static inline void 
 w_satp(uint64 x)
 {
@@ -323,6 +328,7 @@ sfence_vma()
 #define PGSIZE 4096 // bytes per page
 #define PGSHIFT 12  // bits of offset within a page
 
+//想上或者向下 舍入到4k的整数倍
 #define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
 #define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
 
@@ -333,6 +339,7 @@ sfence_vma()
 #define PTE_U (1L << 4) // 1 -> user can access
 
 // shift a physical address to the right place for a PTE.
+//物理地址到 pte， 物理地址56 bit ，右移12bit放弃偏移地址， 左移十位 作为flags, 
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
 
 #define PTE2PA(pte) (((pte) >> 10) << 12)
@@ -348,6 +355,7 @@ sfence_vma()
 // MAXVA is actually one bit less than the max allowed by
 // Sv39, to avoid having to sign-extend virtual addresses
 // that have the high bit set.
+// 为了避免转换为int型出现负数问题，需要减少一位 ？ 这个具体的场合不是很理解
 #define MAXVA (1L << (9 + 9 + 9 + 12 - 1))
 
 typedef uint64 pte_t;
