@@ -8,6 +8,7 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
+#include "sysinfo.h"
 
 void freerange(void *pa_start, void *pa_end);
 
@@ -37,6 +38,7 @@ freerange(void *pa_start, void *pa_end)
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
     kfree(p);
+  
 }
 
 // Free the page of physical memory pointed at by v,
@@ -57,6 +59,7 @@ kfree(void *pa)
   r = (struct run*)pa;
 
   acquire(&kmem.lock);
+  sub_mem(PGSIZE);
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);
@@ -74,6 +77,7 @@ kalloc(void)
   r = kmem.freelist;
   if(r)
     kmem.freelist = r->next;
+  add_mem(PGSIZE);
   release(&kmem.lock);
 
   if(r)

@@ -3,7 +3,7 @@
 #include "kernel/sysinfo.h"
 #include "user/user.h"
 
-
+//a
 void
 sinfo(struct sysinfo *info) {
   if (sysinfo(info) < 0) {

@@ -6,6 +6,8 @@
 #include "proc.h"
 #include "defs.h"
 
+#include "sysinfo.h"
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -126,7 +128,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-
+  add_nproc(1);
   return p;
 }
 
@@ -150,6 +152,7 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  sub_nproc(1);
 }
 
 // Create a user page table for a given process,
@@ -274,7 +277,7 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
-
+  np->trace_mask = p->trace_mask;
   np->parent = p;
 
   // copy saved user registers.
