@@ -1,9 +1,9 @@
-// Saved registers for kernel context switches.
+// Saved registers for kernel context switches. 上下文切换
 struct context {
-  uint64 ra;
+  uint64 ra; //ra是 return address 寄存器
   uint64 sp;
 
-  // callee-saved
+  // callee-saved 被调用者返回
   uint64 s0;
   uint64 s1;
   uint64 s2;
@@ -96,11 +96,13 @@ struct proc {
 
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack
-  uint64 sz;                   // Size of process memory (bytes)
+  uint64 sz;                   // Size of process memory (bytes) 指向sz
   pagetable_t pagetable;       // User page table
   struct trapframe *trapframe; // data page for trampoline.S
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  pagetable_t kpagetable;
 };

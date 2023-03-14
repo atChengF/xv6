@@ -21,9 +21,9 @@ main()
     printf("\n");
     kinit();         // physical page allocator
     kvminit();       // create kernel page table
-    kvminithart();   // turn on paging
-    procinit();      // process table
-    trapinit();      // trap vectors
+    kvminithart();   // turn on paging 
+    procinit();      // process table，分配每一个进程内核栈
+    trapinit();      // trap vectors 
     trapinithart();  // install kernel trap vector
     plicinit();      // set up interrupt controller
     plicinithart();  // ask PLIC for device interrupts
@@ -42,7 +42,6 @@ main()
     while(started == 0)
       ;
     __sync_synchronize();
-    printf("hart %d starting\n", cpuid());
     kvminithart();    // turn on paging
     trapinithart();   // install kernel trap vector
     plicinithart();   // ask PLIC for device interrupts

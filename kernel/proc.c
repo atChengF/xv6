@@ -13,11 +13,14 @@ struct proc proc[NPROC];
 struct proc *initproc;
 
 int nextpid = 1;
+
+//pid锁，逐渐增大
 struct spinlock pid_lock;
 
 extern void forkret(void);
 static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
+extern pagetable_t kvmcreate();
 
 extern char trampoline[]; // trampoline.S
 
@@ -105,26 +108,36 @@ allocproc(void)
   return 0;
 
 found:
+  //获取一个 pid
   p->pid = allocpid();
 
   // Allocate a trapframe page.
+  //申请一块 trapframe, 如果失败返回 0
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
     return 0;
   }
 
-  // An empty user page table.
+  // An empty user page table. 申请用户页表
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
     freeproc(p);
     release(&p->lock);
     return 0;
   }
+  //申请内核页表副本
+  p->kpagetable = kvmcreate();
+  // mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
+  // 将该进程的内核地址映射到 内核 ,不需要了
+  // uint64 va = KSTACK((int) (p - proc));
+  // mappages(p->kpagetable, va, p->kstack, PGSIZE, PTE_R | PTE_W);
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
+  //ra 设置到forkret
   p->context.ra = (uint64)forkret;
+  //sp 指向kstack的栈顶
   p->context.sp = p->kstack + PGSIZE;
 
   return p;
@@ -150,6 +163,12 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  //回收页表
+  if(p->kpagetable){
+    kvmfree(p->kpagetable);
+  }
+  p->kpagetable = 0;
 }
 
 // Create a user page table for a given process,
@@ -207,12 +226,11 @@ uchar initcode[] = {
   0x00, 0x00, 0x00, 0x00
 };
 
-// Set up first user process.
+// Set up first user process. 第一个进程
 void
 userinit(void)
 {
   struct proc *p;
-
   p = allocproc();
   initproc = p;
   
@@ -234,7 +252,7 @@ userinit(void)
 }
 
 // Grow or shrink user memory by n bytes.
-// Return 0 on success, -1 on failure.
+// Return 0 on success, -1 on failure. sbrk()
 int
 growproc(int n)
 {
@@ -242,6 +260,7 @@ growproc(int n)
   struct proc *p = myproc();
 
   sz = p->sz;
+  if(PGROUNDUP(sz + n) >= PLIC) return -1;
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
@@ -249,6 +268,8 @@ growproc(int n)
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
+  
+  u2kvmcopy(p->pagetable, p->kpagetable, p->sz, sz);
   p->sz = sz;
   return 0;
 }
@@ -289,6 +310,7 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  u2kvmcopy(np->pagetable, np->kpagetable, 0, np->sz);
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -473,8 +495,14 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        //切换页表
+        w_satp(MAKE_SATP(p->kpagetable));
+        //刷新tlb
+        sfence_vma();
+        //主要就是 sp, ra ra会记录当前地址的下一条地址
         swtch(&c->context, &p->context);
-
+        //切换全局页表
+        kvminithart();
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
@@ -485,6 +513,8 @@ scheduler(void)
     }
 #if !defined (LAB_FS)
     if(found == 0) {
+      //切换全局页表
+      kvminithart();
       intr_on();
       asm volatile("wfi");
     }
@@ -506,18 +536,22 @@ sched(void)
 {
   int intena;
   struct proc *p = myproc();
-
+  // 先持有锁
   if(!holding(&p->lock))
     panic("sched p->lock");
+  // 关中断嵌套深度不为1
   if(mycpu()->noff != 1)
     panic("sched locks");
+  // 如果当前state 为RUNNING
   if(p->state == RUNNING)
     panic("sched running");
+  // 判断当前是否可以中断
   if(intr_get())
     panic("sched interruptible");
 
   intena = mycpu()->intena;
   swtch(&p->context, &mycpu()->context);
+  //恢复之前中断状态
   mycpu()->intena = intena;
 }
 

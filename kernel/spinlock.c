@@ -92,7 +92,7 @@ push_off(void)
 
   intr_off();
   if(mycpu()->noff == 0)
-    mycpu()->intena = old;
+    mycpu()->intena = old;  // intena 判断之前是否开中孤单或者关中断
   mycpu()->noff += 1;
 }
 

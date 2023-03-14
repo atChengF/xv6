@@ -6,7 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 #include "elf.h"
-
+extern void vmprint(pagetable_t pagetable);
 static int loadseg(pde_t *pgdir, uint64 addr, struct inode *ip, uint offset, uint sz);
 
 int
@@ -74,7 +74,9 @@ exec(char *path, char **argv)
   uvmclear(pagetable, sz-2*PGSIZE);
   sp = sz;
   stackbase = sp - PGSIZE;
-
+  
+  // 0 - sz 全部重新复制一遍
+  u2kvmcopy(pagetable, p->kpagetable, 0, sz);
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
     if(argc >= MAXARG)
@@ -116,6 +118,7 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
+  if(p->pid==1) vmprint(p->pagetable);
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:

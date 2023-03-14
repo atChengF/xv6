@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -14,7 +16,6 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
-
 /*
  * create a direct-map page table for the kernel.
  */
@@ -131,8 +132,8 @@ kvmpa(uint64 va)
   uint64 off = va % PGSIZE;
   pte_t *pte;
   uint64 pa;
-  
-  pte = walk(kernel_pagetable, va, 0);
+ 
+  pte = walk( myproc()->kpagetable, va, 0);
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -438,5 +439,89 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return 0;
   } else {
     return -1;
+  }
+}
+
+void recur(pagetable_t pagetable, int level){
+  if(level == 0) return;
+  for(int i = 0; i < 512 ; i ++ ){
+    pte_t pte = pagetable[i];
+    if(!(pte & PTE_V)) continue;
+    else {
+      for(int j = 3 - level; j >= 0; j --) printf(" ..");
+      printf("%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+      recur((pagetable_t)PTE2PA(pte), level - 1);
+    } 
+  }
+
+}
+//页表存放在内核里，所以不用担心访问不到的问题
+void vmprint(pagetable_t pagetable){
+  printf("page table %p\n", pagetable);
+  recur(pagetable, 3);
+}
+
+void kvmmpkernel(pagetable_t pagetable_t, uint64 va, uint64 pa, uint64 sz, int perm){
+  if(mappages(pagetable_t, va, sz, pa, perm) != 0)
+    panic("kvmmap");
+}
+
+pagetable_t kvmcreate(){
+  pagetable_t pagetable ;
+  pagetable = uvmcreate();
+  int i = 1;
+  for( ; i < 512; i ++ ){
+    pagetable[i] = kernel_pagetable[i];
+  }
+
+  //设备地址需要映射
+  // uart registers
+  kvmmpkernel(pagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  // virtio mmio disk interface
+  kvmmpkernel(pagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  // CLINT
+  kvmmpkernel(pagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  // PLIC
+  kvmmpkernel(pagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+  return pagetable;
+}
+
+void kvmfree(pagetable_t kpagetable){
+  pagetable_t level1 = (pagetable_t) PTE2PA(kpagetable[0]);
+  for(int i = 0; i < 512 ; i ++ ){
+    pte_t pte = level1[i];
+    //valid is 1
+    if(pte & PTE_V) {
+      pagetable_t level2 = (pagetable_t) PTE2PA(pte);
+      kfree((void *)level2);
+      level1[i] = 0;
+    }
+  }
+  kfree(level1);
+  kfree(kpagetable);
+}
+//还需要考虑删除的情况
+void u2kvmcopy(pagetable_t upagetable, pagetable_t kpagetable, uint64 oldsz, uint64 newsz) {
+  oldsz = PGROUNDUP(oldsz);
+  if(PGROUNDUP(oldsz) == PGROUNDUP(newsz)) return;
+  if(newsz > oldsz){
+    for (uint64 i = oldsz; i < newsz; i += PGSIZE) {
+      pte_t* pte_from = walk(upagetable, i, 0);
+      pte_t* pte_to = walk(kpagetable, i, 1);
+      if(pte_from == 0) panic("u2kvmcopy: src pte do not exist");
+      if(pte_to == 0) panic("u2kvmcopy: dest pte walk fail");
+      uint64 pa = PTE2PA(*pte_from);
+      uint flag = (PTE_FLAGS(*pte_from)) & (~PTE_U);
+      *pte_to = PA2PTE(pa) | flag;
+    }
+  } else {
+    for (uint64 i = oldsz; i > newsz; i -= PGSIZE) {
+
+      pte_t* pte = walk(kpagetable, i, 1);
+      if(pte == 0) panic("u2kvmcopy: dest pte walk fail");
+      //标为无效
+      *pte = (*pte & ~ PTE_V);
+    }
   }
 }
