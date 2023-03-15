@@ -103,4 +103,12 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  //for sigalarm ticks = 0 表示不进行ticks,然后每次遇到 ticks 的倍数，进行执行，如何进行执行？
+  uint64 ticks;
+  struct trapframe *trapframe_copy;
+  // fn 是标记的函数
+  uint64 fn;
+  // 1 代表 正在执行，0代表执行完成
+  int running;
 };

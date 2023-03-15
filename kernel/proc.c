@@ -108,7 +108,8 @@ found:
   p->pid = allocpid();
 
   // Allocate a trapframe page.
-  if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+  if((p->trapframe = (struct trapframe *)kalloc()) == 0 || (p->trapframe_copy = (struct trapframe *)kalloc()) == 0){
+
     release(&p->lock);
     return 0;
   }
@@ -127,6 +128,8 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  p->ticks = 0;
+
   return p;
 }
 
@@ -139,6 +142,9 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+   if(p->trapframe_copy)
+    kfree((void*)p->trapframe_copy);
+  p->trapframe_copy = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -696,4 +702,39 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+void backtrace(void){
+  uint64 fp = r_fp();
+  //PGROUNDDOWN(fp) and PGROUNDUP(fp) 
+  uint64 up = PGROUNDUP(fp);
+  printf("backtrace: \n");
+  while(fp < up) {
+    uint64 s0 = *((uint64 *)(fp - 16));
+    uint64 ra = *((uint64 *)(fp - 8));
+    printf("%p \n", ra);
+    fp = s0;
+  }
+  // uint64 fp = r_fp(), top = PGROUNDUP(fp);
+  // printf("backtrace:\n");
+  // for(; fp < top; fp = *((uint64*)(fp-16))) {
+  //   printf("%p\n", *((uint64*)(fp-8)));
+  // }
+}
+
+void sigalarm(int ticks, uint64 fn){
+  struct proc * p = myproc();
+  acquire(&p->lock);
+  p->running = 0;
+  p->ticks = ticks;
+  p->fn = fn;
+  release(&p->lock);
+}
+
+void sigreturn(){
+    struct proc *p = myproc();
+    acquire(&p->lock);
+    p->running = 0;
+    *(p->trapframe) = *(p->trapframe_copy);
+    release(&p->lock);
 }
