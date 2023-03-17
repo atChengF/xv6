@@ -37,7 +37,7 @@ struct logheader {
   int block[LOGSIZE];
 };
 
-struct log {
+struct log {  
   struct spinlock lock;
   int start;
   int size;

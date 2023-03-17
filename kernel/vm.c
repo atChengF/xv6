@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -68,6 +70,7 @@ kvminithart()
 //   21..29 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
+//  软件实现找到对应的pte
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
@@ -91,6 +94,7 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
 // Look up a virtual address, return the physical address,
 // or 0 if not mapped.
 // Can only be used to look up user pages.
+// 得到对应的 pa
 uint64
 walkaddr(pagetable_t pagetable, uint64 va)
 {
@@ -101,10 +105,22 @@ walkaddr(pagetable_t pagetable, uint64 va)
     return 0;
 
   pte = walk(pagetable, va, 0);
-  if(pte == 0)
-    return 0;
-  if((*pte & PTE_V) == 0)
-    return 0;
+  //if(pte == 0)
+  //  return 0;
+  //if((*pte & PTE_V) == 0)
+  //  return 0;
+  if (pte == 0 || (*pte & PTE_V) == 0) {
+    //pa = lazyalloc(va);
+    struct proc *p = myproc();
+    if(va >= p->sz || va < PGROUNDUP(p->trapframe->sp)) return 0;
+    pa = (uint64)kalloc();
+    if (pa == 0) return 0;
+    if (mappages(p->pagetable, va, PGSIZE, pa, PTE_W|PTE_R|PTE_U|PTE_X) != 0) {
+      kfree((void*)pa);
+      return 0;
+    }
+    return pa;
+  }
   if((*pte & PTE_U) == 0)
     return 0;
   pa = PTE2PA(*pte);
@@ -114,6 +130,7 @@ walkaddr(pagetable_t pagetable, uint64 va)
 // add a mapping to the kernel page table.
 // only used when booting.
 // does not flush TLB or enable paging.
+// 内核页表进行映射
 void
 kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 {
@@ -125,6 +142,7 @@ kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 // a physical address. only needed for
 // addresses on the stack.
 // assumes va is page aligned.
+// 等到内核va对应的 pa
 uint64
 kvmpa(uint64 va)
 {
@@ -144,7 +162,8 @@ kvmpa(uint64 va)
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa. va and size might not
 // be page-aligned. Returns 0 on success, -1 if walk() couldn't
-// allocate a needed page-table page.
+// allocate a needed page-table page. 
+// 将pa - pa + size 映射 到 va
 int
 mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 {
@@ -170,6 +189,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
+// 清除 va - va + npages*PGSIZE 释放内存 并将 pte清零
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
@@ -180,10 +200,10 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+    if((pte = walk(pagetable, a, 0)) == 0) continue;
+      //panic("uvmunmap: walk");
+    if((*pte & PTE_V) == 0) continue;
+    // panic("uvmunmap: not mapped"); 没有映射就直接跳过
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -224,7 +244,8 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
 }
 
 // Allocate PTEs and physical memory to grow process from oldsz to
-// newsz, which need not be page aligned.  Returns new size or 0 on error.
+// newsz, which need not be page aligned.  Returns new size or 0 on error. 
+// 申请 用户vm oldsz - newsz
 uint64
 uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
@@ -277,12 +298,12 @@ freewalk(pagetable_t pagetable)
   // there are 2^9 = 512 PTEs in a page table.
   for(int i = 0; i < 512; i++){
     pte_t pte = pagetable[i];
-    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){ //当前pte 有效 并且未被使用
       // this PTE points to a lower-level page table.
       uint64 child = PTE2PA(pte);
       freewalk((pagetable_t)child);
       pagetable[i] = 0;
-    } else if(pte & PTE_V){
+    } else if(pte & PTE_V){  //pte & PTE_V 说明当前页表是有效的
       panic("freewalk: leaf");
     }
   }
@@ -315,9 +336,11 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      //panic("uvmcopy: pte should exist");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      //panic("uvmcopy: page not present");
+      continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
