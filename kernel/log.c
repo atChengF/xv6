@@ -35,22 +35,23 @@
 struct logheader {
   int n;
   int block[LOGSIZE];
-};
+};  //n指示了多少个成功提交的事物，int block[] 指向需要修改的块
 
 struct log {  
   struct spinlock lock;
-  int start;
-  int size;
+  int start;  // 表示从什么位置开始
+  int size;   // 日志大小
   int outstanding; // how many FS sys calls are executing.
   int committing;  // in commit(), please wait.
-  int dev;
-  struct logheader lh;
+  int dev; // 设备号
+  struct logheader lh;  //日志头
 };
-struct log log;
+struct log log; 
 
 static void recover_from_log(void);
 static void commit();
 
+//超级块中含有这些信息
 void
 initlog(int dev, struct superblock *sb)
 {
@@ -64,7 +65,7 @@ initlog(int dev, struct superblock *sb)
   recover_from_log();
 }
 
-// Copy committed blocks from log to their home location
+// Copy committed blocks from log to their home location 加上检查点
 static void
 install_trans(void)
 {
@@ -97,7 +98,7 @@ read_head(void)
 
 // Write in-memory log header to disk.
 // This is the true point at which the
-// current transaction commits.
+// current transaction commits. 写入日志头
 static void
 write_head(void)
 {
@@ -121,7 +122,7 @@ recover_from_log(void)
   write_head(); // clear the log
 }
 
-// called at the start of each FS system call.
+// called at the start of each FS system call. 开始一个事物
 void
 begin_op(void)
 {
@@ -141,7 +142,7 @@ begin_op(void)
 }
 
 // called at the end of each FS system call.
-// commits if this was the last outstanding operation.
+// commits if this was the last outstanding operation. 结束一个事物， 如果当前是最后一个事物，那么进行提交
 void
 end_op(void)
 {
@@ -194,7 +195,7 @@ commit()
 {
   if (log.lh.n > 0) {
     write_log();     // Write modified blocks from cache to log
-    write_head();    // Write header to disk -- the real commit
+    write_head();    // Write header to disk -- the real commit 这一步就能保证当前的更新不丢失了
     install_trans(); // Now install writes to home locations
     log.lh.n = 0;
     write_head();    // Erase the transaction from the log
@@ -233,3 +234,11 @@ log_write(struct buf *b)
   release(&log.lock);
 }
 
+// begin_op(); 
+// // ...
+// bp = bread(...);      // read out bp
+// bp->data[...] = ...;  // modify bp->data[]
+// log_write(bp);        // bp has been modified, so put it in log
+// brelse(bp);           // release bp
+// // ...
+// end_op();

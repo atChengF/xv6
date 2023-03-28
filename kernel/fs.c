@@ -9,6 +9,8 @@
 // routines.  The (higher-level) system call implementations
 // are in sysfile.c.
 
+// XV6的日志系统，没有提供回滚机制，也就是说如果发生在日志写入的过程中发生了崩溃，日志就是不完整的，需要进行完整性检查
+
 #include "types.h"
 #include "riscv.h"
 #include "defs.h"
@@ -174,7 +176,7 @@ bfree(int dev, uint b)
 struct {
   struct spinlock lock;
   struct inode inode[NINODE];
-} icache;
+} icache; // 存放 inode 的cache
 
 void
 iinit()
@@ -198,10 +200,11 @@ ialloc(uint dev, short type)
   int inum;
   struct buf *bp;
   struct dinode *dip;
-
+  //遍历inode 块，找到一个free块
   for(inum = 1; inum < sb.ninodes; inum++){
     bp = bread(dev, IBLOCK(inum, sb));
     dip = (struct dinode*)bp->data + inum%IPB;
+
     if(dip->type == 0){  // a free inode
       memset(dip, 0, sizeof(*dip));
       dip->type = type;
@@ -239,6 +242,7 @@ iupdate(struct inode *ip)
 // Find the inode with number inum on device dev
 // and return the in-memory copy. Does not lock
 // the inode and does not read it from disk.
+// 得到 对应 inum 的缓冲块 ，但是还没有有效内容， 通过valid位来标记当前不可用
 static struct inode*
 iget(uint dev, uint inum)
 {
@@ -249,11 +253,13 @@ iget(uint dev, uint inum)
   // Is the inode already cached?
   empty = 0;
   for(ip = &icache.inode[0]; ip < &icache.inode[NINODE]; ip++){
+    // 存在对应缓存
     if(ip->ref > 0 && ip->dev == dev && ip->inum == inum){
       ip->ref++;
       release(&icache.lock);
       return ip;
     }
+    // 如果 缓存引用数量为零
     if(empty == 0 && ip->ref == 0)    // Remember empty slot.
       empty = ip;
   }
@@ -261,6 +267,8 @@ iget(uint dev, uint inum)
   // Recycle an inode cache entry.
   if(empty == 0)
     panic("iget: no inodes");
+
+  //将
 
   ip = empty;
   ip->dev = dev;
@@ -273,7 +281,7 @@ iget(uint dev, uint inum)
 }
 
 // Increment reference count for ip.
-// Returns ip to enable ip = idup(ip1) idiom.
+// Returns ip to enable ip = idup(ip1) idiom.增加引用次数
 struct inode*
 idup(struct inode *ip)
 {
@@ -285,6 +293,7 @@ idup(struct inode *ip)
 
 // Lock the given inode.
 // Reads the inode from disk if necessary.
+
 void
 ilock(struct inode *ip)
 {
@@ -295,7 +304,7 @@ ilock(struct inode *ip)
     panic("ilock");
 
   acquiresleep(&ip->lock);
-
+  // 如果当前位非法，从磁盘中读取
   if(ip->valid == 0){
     bp = bread(ip->dev, IBLOCK(ip->inum, sb));
     dip = (struct dinode*)bp->data + ip->inum%IPB;
@@ -313,6 +322,7 @@ ilock(struct inode *ip)
 }
 
 // Unlock the given inode.
+// 解锁
 void
 iunlock(struct inode *ip)
 {
